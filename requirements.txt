@@ -1,4 +1,3 @@
 python-telegram-bot
 SQLAlchemy
 pytz
-psycopg2-binary
