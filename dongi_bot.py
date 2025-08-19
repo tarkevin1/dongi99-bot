@@ -1,7 +1,15 @@
-# dongi_bot.py (نسخه نهایی با اصلاح NameError)
+# dongi_bot.py (نسخه نهایی کامل با تمام قابلیت‌ها و اصلاحات)
 import logging
 import os
 from functools import wraps
+
+# --- خواندن توکن در ابتدای برنامه ---
+# توکن را در یک متغیر سراسری می‌خوانیم تا مطمئن شویم همیشه در دسترس است
+TELEGRAM_BOT_TOKEN = os.environ.get("8410926922:AAEKu4H9OCw1dOrc7aZ3d6aXUE0H4GAiJvo")
+
+print("--- STARTING FINAL BOT VERSION (TOKEN FIX ATTEMPT) ---")
+print(f"Token read at startup: {'Token found' if TELEGRAM_BOT_TOKEN else 'Token NOT found'}")
+
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -14,10 +22,9 @@ from telegram.ext import (
 )
 from telegram.error import Forbidden
 
-print("--- STARTING FINAL BOT VERSION WITH ADMIN FEATURES ---")
-
 # --- تنظیمات ادمین ---
-ADMIN_CHAT_ID = 609782275 # !!! این قسمت را با آیدی تلگرام خودتان جایگزین کنید !!!
+# !!! این قسمت را با آیدی عددی تلگرام خودتان که از @userinfobot گرفتید، جایگزین کنید !!!
+ADMIN_CHAT_ID = 609782275
 
 # --- تنظیمات اولیه ---
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -44,6 +51,8 @@ class Expense(Base):
 class User(Base):
     __tablename__ = 'users'
     chat_id = Column(Integer, primary_key=True, unique=True)
+    first_name = Column(String)
+    username = Column(String)
     is_blocked = Column(Boolean, default=False, nullable=False)
 
 engine = create_engine('sqlite:////data/dongi.db')
@@ -91,9 +100,14 @@ def main_menu_reply_keyboard():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     chat_id = update.effective_chat.id
-    if not session.query(User).filter_by(chat_id=chat_id).first():
-        new_user = User(chat_id=chat_id, is_blocked=False)
+    db_user = session.query(User).filter_by(chat_id=chat_id).first()
+    if not db_user:
+        new_user = User(chat_id=chat_id, first_name=user.first_name, username=user.username, is_blocked=False)
         session.add(new_user)
+        session.commit()
+    elif db_user.first_name != user.first_name or db_user.username != user.username:
+        db_user.first_name = user.first_name
+        db_user.username = user.username
         session.commit()
     initial_people = ['حسین', 'علی', 'پویا']
     for name in initial_people:
@@ -240,10 +254,15 @@ async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     all_users = session.query(User).all()
     if not all_users: await update.message.reply_text("هیچ کاربری یافت نشد."); return
-    message = "لیست کاربران ربات:\n\n"
+    message = "<b>لیست کاربران ربات:</b>\n\n"
     for user in all_users:
         status = "❌ بلاک شده" if user.is_blocked else "✅ فعال"
+        user_info = f"{user.first_name}"
+        if user.username:
+            user_info += f" (@{user.username})"
+        message += f"👤 <b>{user_info}</b>\n"
         message += f"<b>Chat ID:</b> <code>{user.chat_id}</code> - {status}\n"
+        message += "--------------------\n"
     await update.message.reply_html(message)
 
 @admin_only
@@ -269,9 +288,12 @@ async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     except (IndexError, ValueError): await update.message.reply_text("مثال: /unblock 987654321")
 
 def main() -> None:
-    TOKEN = os.environ.get("8459406635:AAFCz8eOdI5kAZUlUsCRl6E9cKwIFG_-YRo")
-    if not TOKEN: print("خطا: توکن تلگرام یافت نشد."); return
-    application = Application.builder().token(TOKEN).build()
+    if not TELEGRAM_BOT_TOKEN:
+        print("خطا: توکن تلگرام یافت نشد. لطفا متغیر محیطی TELEGRAM_TOKEN را در Railway تنظیم کنید.")
+        return
+
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    
     conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex('^💳 ثبت هزینه جدید$'), add_expense_start)],
         states={
@@ -281,18 +303,23 @@ def main() -> None:
         },
         fallbacks=[CommandHandler('cancel', cancel)],
     )
+    
     application.add_handler(CommandHandler("start", start))
     application.add_handler(conv_handler)
+    
     application.add_handler(MessageHandler(filters.Regex('^📊 گزارش کامل$'), report))
     application.add_handler(MessageHandler(filters.Regex('^🧾 لیست هزینه‌ها$'), my_expenses))
     application.add_handler(MessageHandler(filters.Regex('^👥 مدیریت افراد$'), manage_people_prompt))
     application.add_handler(MessageHandler(filters.Regex('^🗑️ حذف یک هزینه$'), delete_expense_prompt))
+    
     application.add_handler(CommandHandler("addperson", add_person))
     application.add_handler(CommandHandler("delperson", del_person))
     application.add_handler(CommandHandler("delete", delete_expense))
+    
     application.add_handler(CommandHandler("listusers", list_users))
     application.add_handler(CommandHandler("block", block_user))
     application.add_handler(CommandHandler("unblock", unblock_user))
+    
     print("ربات با موفقیت در حال اجراست...")
     application.run_polling()
 
