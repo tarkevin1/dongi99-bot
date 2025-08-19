@@ -1,0 +1,1 @@
+worker: python dongi_bot.py
