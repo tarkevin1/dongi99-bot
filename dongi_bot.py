@@ -1,4 +1,4 @@
-# dongi_bot.py (نسخه نهایی کامل با منوی کیبوردی و حل مشکل دیتابیس)
+# dongi_bot.py (نسخه نهایی کامل با دکمه راهنمای حذف)
 import logging
 import os
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
@@ -12,8 +12,7 @@ from telegram.ext import (
     ConversationHandler,
 )
 
-# این پیام در لاگ‌های Railway به شما نشان می‌دهد که نسخه جدید کد در حال اجراست
-print("--- STARTING FINAL BOT VERSION ---")
+print("--- STARTING FINAL BOT VERSION WITH DELETE OPTION ---")
 
 # --- تنظیمات اولیه ---
 logging.basicConfig(
@@ -21,7 +20,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- تنظیمات پایگاه داده با SQLAlchemy ---
+# --- تنظیمات پایگاه داده ---
 from sqlalchemy import create_engine, Column, Integer, String, Float
 from sqlalchemy.orm import sessionmaker, declarative_base
 
@@ -39,20 +38,20 @@ class Expense(Base):
     amount = Column(Float, nullable=False)
     description = Column(String)
 
-# استفاده از مسیر حافظه دائمی (Volume) در Railway
 engine = create_engine('sqlite:////data/dongi.db')
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 session = Session()
 
-# --- متغیرهای حالت برای فرآیند ثبت هزینه ---
+# --- متغیرهای حالت ---
 SELECTING_PAYER, ENTERING_AMOUNT, ENTERING_DESC = range(3)
 
 # --- تابع ساخت دکمه‌های کیبوردی ---
 def main_menu_reply_keyboard():
     keyboard = [
         ["💳 ثبت هزینه جدید", "📊 گزارش کامل"],
-        ["🧾 لیست هزینه‌ها", "👥 مدیریت افراد"],
+        ["🧾 لیست هزینه‌ها", "🗑️ حذف یک هزینه"],
+        ["👥 مدیریت افراد"],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -166,6 +165,15 @@ async def manage_people_prompt(update: Update, context: ContextTypes.DEFAULT_TYP
         reply_markup=main_menu_reply_keyboard()
     )
 
+async def delete_expense_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تابع جدید برای راهنمایی حذف هزینه"""
+    await update.message.reply_html(
+        "برای حذف یک هزینه، ابتدا با دکمه <b>'🧾 لیست هزینه‌ها'</b>، ID هزینه مورد نظر را پیدا کرده و سپس از دستور زیر استفاده کنید:\n\n"
+        "<code>/delete ID</code>\n\n"
+        "<b>مثال:</b> <code>/delete 12</code>",
+        reply_markup=main_menu_reply_keyboard()
+    )
+
 # --- توابع مدیریت دستورات متنی ---
 async def add_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.args:
@@ -233,6 +241,7 @@ def main() -> None:
     application.add_handler(MessageHandler(filters.Regex('^📊 گزارش کامل$'), report))
     application.add_handler(MessageHandler(filters.Regex('^🧾 لیست هزینه‌ها$'), my_expenses))
     application.add_handler(MessageHandler(filters.Regex('^👥 مدیریت افراد$'), manage_people_prompt))
+    application.add_handler(MessageHandler(filters.Regex('^🗑️ حذف یک هزینه$'), delete_expense_prompt)) # <-- خط جدید
 
     application.add_handler(CommandHandler("addperson", add_person))
     application.add_handler(CommandHandler("delperson", del_person))
