@@ -267,7 +267,7 @@ async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     except (IndexError, ValueError): await update.message.reply_text("مثال: /unblock 987654321")
 
 def main() -> None:
-    TOKEN = os.environ.get("TELEGRAM_TOKEN")
+    TOKEN = os.environ.get("8410926922:AAEKu4H9OCw1dOrc7aZ3d6aXUE0H4GAiJvo")
     if not TOKEN: print("خطا: توکن یافت نشد."); return
     application = Application.builder().token(TOKEN).build()
     conv_handler = ConversationHandler(
