@@ -1,4 +1,4 @@
-# dongi_bot.py (نسخه نهایی با قابلیت ادمین و بلاک کردن)
+# dongi_bot.py (نسخه نهایی با اصلاح NameError)
 import logging
 import os
 from functools import wraps
@@ -17,8 +17,7 @@ from telegram.error import Forbidden
 print("--- STARTING FINAL BOT VERSION WITH ADMIN FEATURES ---")
 
 # --- تنظیمات ادمین ---
-# !!! این قسمت را با آیدی عددی تلگرام خودتان که از @userinfobot گرفتید، جایگزین کنید !!!
-ADMIN_CHAT_ID = 609782275
+ADMIN_CHAT_ID = 609782275 # !!! این قسمت را با آیدی تلگرام خودتان جایگزین کنید !!!
 
 # --- تنظیمات اولیه ---
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -52,9 +51,11 @@ Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 session = Session()
 
+# --- متغیرهای حالت برای فرآیند ثبت هزینه ---
+SELECTING_PAYER, ENTERING_AMOUNT, ENTERING_DESC = range(3)
+
 # --- دکوریتورها برای کنترل دسترسی ---
 def check_if_blocked(func):
-    """چک می‌کند که آیا کاربر بلاک شده است یا خیر"""
     @wraps(func)
     async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         chat_id = update.effective_chat.id
@@ -66,7 +67,6 @@ def check_if_blocked(func):
     return wrapped
 
 def admin_only(func):
-    """چک می‌کند که آیا کاربر ادمین است یا خیر"""
     @wraps(func)
     async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         chat_id = update.effective_chat.id
@@ -77,7 +77,7 @@ def admin_only(func):
         return await func(update, context, *args, **kwargs)
     return wrapped
 
-# --- تابع ساخت دکمه‌های کیبوردی ---
+# --- توابع ساخت دکمه‌های کیبوردی ---
 def main_menu_reply_keyboard():
     keyboard = [
         ["💳 ثبت هزینه جدید", "📊 گزارش کامل"],
@@ -95,7 +95,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         new_user = User(chat_id=chat_id, is_blocked=False)
         session.add(new_user)
         session.commit()
-        logger.info(f"New user saved: {chat_id}")
     initial_people = ['حسین', 'علی', 'پویا']
     for name in initial_people:
         if not session.query(Person).filter_by(name=name).first():
@@ -104,7 +103,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     session.commit()
     await update.message.reply_html(f'سلام {user.first_name}! 👋', reply_markup=main_menu_reply_keyboard())
 
-# --- توابع مربوط به فرآیند ثبت هزینه ---
 @check_if_blocked
 async def add_expense_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     target_message = update.message
@@ -153,7 +151,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
     return ConversationHandler.END
 
-# --- توابع اصلی که با دکمه‌ها فراخوانی می‌شوند ---
 @check_if_blocked
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     people = session.query(Person).all()
@@ -164,8 +161,7 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     total_spent = 0
     individual_totals = {person.name: 0 for person in people}
     for expense in expenses:
-        if expense.payer_name in individual_totals:
-            individual_totals[expense.payer_name] += expense.amount
+        if expense.payer_name in individual_totals: individual_totals[expense.payer_name] += expense.amount
         total_spent += expense.amount
     report_text += '<b>جمع هزینه‌های هر فرد:</b>\n'
     for name, total in sorted(individual_totals.items(), key=lambda item: item[1], reverse=True):
@@ -194,11 +190,10 @@ async def manage_people_prompt(update: Update, context: ContextTypes.DEFAULT_TYP
 async def delete_expense_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_html("برای حذف، ابتدا با دکمه '🧾 لیست هزینه‌ها'، ID را پیدا کرده و سپس از دستور زیر استفاده کنید:\n<code>/delete ID</code>", reply_markup=main_menu_reply_keyboard())
 
-# --- تابع ارسال نوتیفیکیشن ---
 async def send_notification_to_all(message: str, context: ContextTypes.DEFAULT_TYPE, notifier_chat_id: int):
     all_users = session.query(User).all()
     for user in all_users:
-        if user.chat_id == notifier_chat_id: continue # به خود فرد ارسال نکن
+        if user.chat_id == notifier_chat_id: continue
         try:
             await context.bot.send_message(chat_id=user.chat_id, text=message)
         except Forbidden:
@@ -208,33 +203,38 @@ async def send_notification_to_all(message: str, context: ContextTypes.DEFAULT_T
         except Exception as e:
             logger.error(f"Could not send message to {user.chat_id}: {e}")
 
-# --- دستورات متنی و ادمین ---
 @check_if_blocked
 async def add_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # ... (کد تابع بدون تغییر)
-    pass
+    if not context.args: await update.message.reply_text('مثال: /addperson رضا'); return
+    new_name = context.args[0]
+    if session.query(Person).filter_by(name=new_name).first(): await update.message.reply_text(f'"{new_name}" از قبل موجود است.'); return
+    new_person = Person(name=new_name); session.add(new_person); session.commit()
+    await update.message.reply_text(f'✅ فرد جدید "{new_name}" اضافه شد.')
+
 @check_if_blocked
 async def del_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # ... (کد تابع بدون تغییر)
-    pass
+    if not context.args: await update.message.reply_text('مثال: /delperson علی'); return
+    name_to_delete = context.args[0]
+    person = session.query(Person).filter_by(name=name_to_delete).first()
+    if person:
+        session.delete(person); session.commit()
+        await update.message.reply_text(f'🗑️ "{name_to_delete}" از لیست حذف شد.')
+    else: await update.message.reply_text(f'فردی با نام "{name_to_delete}" پیدا نشد.')
+        
 @check_if_blocked
 async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # ... (کد تابع با اضافه شدن نوتیفیکیشن)
-    if not context.args: await update.message.reply_text('...'); return
+    if not context.args: await update.message.reply_text('مثال: /delete 12'); return
     try:
         expense_id = int(context.args[0])
         expense_to_delete = session.query(Expense).filter_by(id=expense_id).first()
         if expense_to_delete:
             deleted_info = f"ID: {expense_to_delete.id}, پرداخت‌کننده: {expense_to_delete.payer_name}, مبلغ: {expense_to_delete.amount:,.0f}"
-            session.delete(expense_to_delete)
-            session.commit()
+            session.delete(expense_to_delete); session.commit()
             await update.message.reply_html(f'✅ هزینه با <code>ID {expense_id}</code> حذف شد.')
             notification_message = f"🗑️ یک هزینه توسط {update.effective_user.first_name} حذف شد:\n{deleted_info}"
             await send_notification_to_all(notification_message, context, notifier_chat_id=update.effective_chat.id)
-        else:
-            await update.message.reply_text('هزینه‌ای با این ID پیدا نشد.')
-    except ValueError:
-        await update.message.reply_text('ID باید یک عدد باشد.')
+        else: await update.message.reply_text('هزینه‌ای با این ID پیدا نشد.')
+    except ValueError: await update.message.reply_text('ID باید یک عدد باشد.')
 
 @admin_only
 async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
