@@ -1,7 +1,7 @@
-# dongi_bot.py (نسخه جدید با منوی کیبوردی)
+# dongi_bot.py (نسخه نهایی کامل با منوی کیبوردی و حل مشکل دیتابیس)
 import logging
 import os
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup, constants
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -12,13 +12,16 @@ from telegram.ext import (
     ConversationHandler,
 )
 
+# این پیام در لاگ‌های Railway به شما نشان می‌دهد که نسخه جدید کد در حال اجراست
+print("--- STARTING FINAL BOT VERSION ---")
+
 # --- تنظیمات اولیه ---
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# --- تنظیمات پایگاه داده ---
+# --- تنظیمات پایگاه داده با SQLAlchemy ---
 from sqlalchemy import create_engine, Column, Integer, String, Float
 from sqlalchemy.orm import sessionmaker, declarative_base
 
@@ -36,17 +39,17 @@ class Expense(Base):
     amount = Column(Float, nullable=False)
     description = Column(String)
 
+# استفاده از مسیر حافظه دائمی (Volume) در Railway
 engine = create_engine('sqlite:////data/dongi.db')
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 session = Session()
 
-# --- متغیرهای حالت ---
+# --- متغیرهای حالت برای فرآیند ثبت هزینه ---
 SELECTING_PAYER, ENTERING_AMOUNT, ENTERING_DESC = range(3)
 
-# --- تابع ساخت دکمه‌های کیبوردی (جدید) ---
+# --- تابع ساخت دکمه‌های کیبوردی ---
 def main_menu_reply_keyboard():
-    # تعریف دکمه‌ها در ردیف‌های مختلف
     keyboard = [
         ["💳 ثبت هزینه جدید", "📊 گزارش کامل"],
         ["🧾 لیست هزینه‌ها", "👥 مدیریت افراد"],
@@ -64,7 +67,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             session.add(new_person)
     session.commit()
     
-    # ارسال پیام خوش‌آمدگویی به همراه کیبورد جدید
     await update.message.reply_html(
         f'سلام {user.first_name}! 👋\n'
         'به ربات مدیریت دنگ خوش آمدی. لطفاً از منوی زیر استفاده کن.',
@@ -72,7 +74,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 # --- توابع مربوط به فرآیند ثبت هزینه ---
-# این بخش از دکمه‌های شیشه‌ای استفاده می‌کند که برای این کار مناسب‌تر است
 async def add_expense_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     target_message = update.message
     people = session.query(Person).all()
@@ -121,11 +122,15 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 # --- توابع اصلی که با دکمه‌ها فراخوانی می‌شوند ---
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # ... (کد تابع report بدون تغییر) ...
     people = session.query(Person).all()
-    if not people: await update.message.reply_text('...'); return
+    if not people: 
+        await update.message.reply_text('هنوز فردی اضافه نشده است.', reply_markup=main_menu_reply_keyboard())
+        return
     expenses = session.query(Expense).all()
-    if not expenses: await update.message.reply_text('...'); return
+    if not expenses: 
+        await update.message.reply_text('هنوز هزینه‌ای ثبت نشده است.', reply_markup=main_menu_reply_keyboard())
+        return
+        
     report_text = '📊 <b>گزارش کامل دنگ‌ها</b> 📊\n\n'
     total_spent = 0
     individual_totals = {person.name: 0 for person in people}
@@ -143,7 +148,6 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_html(report_text, reply_markup=main_menu_reply_keyboard())
 
 async def my_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # ... (کد تابع my_expenses بدون تغییر) ...
     all_expenses = session.query(Expense).order_by(Expense.id).all()
     if not all_expenses:
         await update.message.reply_text("هنوز هیچ هزینه‌ای ثبت نشده است.", reply_markup=main_menu_reply_keyboard())
@@ -155,7 +159,6 @@ async def my_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await update.message.reply_html(response_text, reply_markup=main_menu_reply_keyboard())
     
 async def manage_people_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """راهنمایی برای مدیریت افراد"""
     await update.message.reply_text(
         "برای مدیریت افراد از دستورات زیر استفاده کنید:\n\n"
         "▫️ افزودن: `/addperson <اسم>`\n"
@@ -164,9 +167,10 @@ async def manage_people_prompt(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 # --- توابع مدیریت دستورات متنی ---
-async def add_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # بدون تغییر
-    # ... (کد تابع add_person) ...
-    if not context.args: await update.message.reply_text('...'); return
+async def add_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not context.args:
+        await update.message.reply_text('مثال: /addperson رضا')
+        return
     new_name = context.args[0]
     if session.query(Person).filter_by(name=new_name).first():
         await update.message.reply_text(f'"{new_name}" از قبل موجود است.')
@@ -176,9 +180,10 @@ async def add_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         session.commit()
         await update.message.reply_text(f'✅ فرد جدید "{new_name}" اضافه شد.')
 
-async def del_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # بدون تغییر
-    # ... (کد تابع del_person) ...
-    if not context.args: await update.message.reply_text('...'); return
+async def del_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not context.args:
+        await update.message.reply_text('مثال: /delperson علی')
+        return
     name_to_delete = context.args[0]
     person = session.query(Person).filter_by(name=name_to_delete).first()
     if person:
@@ -188,9 +193,10 @@ async def del_person(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     else:
         await update.message.reply_text(f'فردی با نام "{name_to_delete}" پیدا نشد.')
         
-async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None: # بدون تغییر
-    # ... (کد تابع delete_expense) ...
-    if not context.args: await update.message.reply_text('...'); return
+async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not context.args:
+        await update.message.reply_text('مثال: /delete 12')
+        return
     try:
         expense_id = int(context.args[0])
         expense_to_delete = session.query(Expense).filter_by(id=expense_id).first()
@@ -206,12 +212,11 @@ async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 def main() -> None:
     TOKEN = os.environ.get("TELEGRAM_TOKEN")
     if not TOKEN:
-        print("خطا: توکن تلگرام پیدا نشد.")
+        print("خطا: توکن تلگرام در متغیرهای محیطی یافت نشد.")
         return
 
     application = Application.builder().token(TOKEN).build()
 
-    # ConversationHandler برای ثبت هزینه (بدون تغییر)
     conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex('^💳 ثبت هزینه جدید$'), add_expense_start)],
         states={
@@ -222,21 +227,18 @@ def main() -> None:
         fallbacks=[CommandHandler('cancel', cancel)],
     )
 
-    # افزودن دستورات و مدیریت دکمه‌های کیبوردی
     application.add_handler(CommandHandler("start", start))
     application.add_handler(conv_handler)
     
-    # مدیریت کلیک روی دکمه‌های کیبوردی
     application.add_handler(MessageHandler(filters.Regex('^📊 گزارش کامل$'), report))
     application.add_handler(MessageHandler(filters.Regex('^🧾 لیست هزینه‌ها$'), my_expenses))
     application.add_handler(MessageHandler(filters.Regex('^👥 مدیریت افراد$'), manage_people_prompt))
 
-    # دستورات متنی هنوز برای دسترسی مستقیم فعال هستند
     application.add_handler(CommandHandler("addperson", add_person))
     application.add_handler(CommandHandler("delperson", del_person))
     application.add_handler(CommandHandler("delete", delete_expense))
 
-    print("ربات در حال اجراست...")
+    print("ربات با موفقیت در حال اجراست...")
     application.run_polling()
 
 if __name__ == '__main__':
