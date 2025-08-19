@@ -1,15 +1,7 @@
-# dongi_bot.py (نسخه نهایی کامل با تمام قابلیت‌ها و اصلاحات)
+# dongi_bot.py (نسخه نهایی برای Render با دیتابیس PostgreSQL)
 import logging
 import os
 from functools import wraps
-
-# --- خواندن توکن در ابتدای برنامه ---
-# توکن را در یک متغیر سراسری می‌خوانیم تا مطمئن شویم همیشه در دسترس است
-TELEGRAM_BOT_TOKEN = os.environ.get("8410926922:AAEKu4H9OCw1dOrc7aZ3d6aXUE0H4GAiJvo")
-
-print("--- STARTING FINAL BOT VERSION (TOKEN FIX ATTEMPT) ---")
-print(f"Token read at startup: {'Token found' if TELEGRAM_BOT_TOKEN else 'Token NOT found'}")
-
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -21,6 +13,8 @@ from telegram.ext import (
     ConversationHandler,
 )
 from telegram.error import Forbidden
+
+print("--- STARTING FINAL BOT VERSION FOR RENDER ---")
 
 # --- تنظیمات ادمین ---
 # !!! این قسمت را با آیدی عددی تلگرام خودتان که از @userinfobot گرفتید، جایگزین کنید !!!
@@ -55,7 +49,14 @@ class User(Base):
     username = Column(String)
     is_blocked = Column(Boolean, default=False, nullable=False)
 
-engine = create_engine('sqlite:////data/dongi.db')
+# اتصال به دیتابیس PostgreSQL از طریق متغیر محیطی
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    print("خطا: آدرس دیتابیس (DATABASE_URL) یافت نشد.")
+    # در صورت عدم وجود آدرس، از برنامه خارج شو
+    exit()
+
+engine = create_engine(DATABASE_URL)
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 session = Session()
@@ -95,7 +96,7 @@ def main_menu_reply_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# --- دستورات اصلی ربات (با کنترل دسترسی) ---
+# --- دستورات اصلی ربات ---
 @check_if_blocked
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
@@ -288,8 +289,9 @@ async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     except (IndexError, ValueError): await update.message.reply_text("مثال: /unblock 987654321")
 
 def main() -> None:
+    TELEGRAM_BOT_TOKEN = os.environ.get("8410926922:AAEKu4H9OCw1dOrc7aZ3d6aXUE0H4GAiJvo")
     if not TELEGRAM_BOT_TOKEN:
-        print("خطا: توکن تلگرام یافت نشد. لطفا متغیر محیطی TELEGRAM_TOKEN را در Railway تنظیم کنید.")
+        print("خطا: توکن تلگرام یافت نشد. لطفا متغیر محیطی TELEGRAM_TOKEN را در Render تنظیم کنید.")
         return
 
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
