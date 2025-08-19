@@ -1,17 +1,14 @@
-# dongi_bot.py (نسخه نهایی کامل با تمام قابلیت‌ها و کد دیباگ)
+# dongi_bot.py (نسخه نهایی کامل با تمام قابلیت‌ها و اصلاحات)
 import logging
 import os
 from functools import wraps
 
-# --- بخش دیباگ ---
-# این بخش تمام متغیرهای محیطی که ربات به آنها دسترسی دارد را در لاگ‌ها چاپ می‌کند
-# تا بتوانیم مشکل توکن را به صورت قطعی پیدا کنیم.
-if os.environ.get("DEBUG_MODE") == "TRUE":
-    print("--- ENVIRONMENT VARIABLES ---")
-    for key, value in os.environ.items():
-        print(f"{key} = {value}")
-    print("---------------------------")
-# --- پایان بخش دیباگ ---
+# --- خواندن توکن در ابتدای برنامه ---
+# توکن را در یک متغیر سراسری می‌خوانیم تا مطمئن شویم همیشه در دسترس است
+TELEGRAM_BOT_TOKEN = os.environ.get("8410926922:AAEKu4H9OCw1dOrc7aZ3d6aXUE0H4GAiJvo")
+
+print("--- STARTING FINAL BOT VERSION (TOKEN FIX ATTEMPT) ---")
+print(f"Token read at startup: {'Token found' if TELEGRAM_BOT_TOKEN else 'Token NOT found'}")
 
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -24,8 +21,6 @@ from telegram.ext import (
     ConversationHandler,
 )
 from telegram.error import Forbidden
-
-print("--- STARTING FINAL BOT VERSION WITH ADMIN AND DEBUG FEATURES ---")
 
 # --- تنظیمات ادمین ---
 # !!! این قسمت را با آیدی عددی تلگرام خودتان که از @userinfobot گرفتید، جایگزین کنید !!!
@@ -293,12 +288,11 @@ async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     except (IndexError, ValueError): await update.message.reply_text("مثال: /unblock 987654321")
 
 def main() -> None:
-    TOKEN = os.environ.get("8410926922:AAEKu4H9OCw1dOrc7aZ3d6aXUE0H4GAiJvo")
-    if not TOKEN:
-        print("خطا: توکن تلگرام یافت نشد.")
+    if not TELEGRAM_BOT_TOKEN:
+        print("خطا: توکن تلگرام یافت نشد. لطفا متغیر محیطی TELEGRAM_TOKEN را در Railway تنظیم کنید.")
         return
 
-    application = Application.builder().token(TOKEN).build()
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     
     conv_handler = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex('^💳 ثبت هزینه جدید$'), add_expense_start)],
